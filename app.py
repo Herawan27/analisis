@@ -12,7 +12,7 @@ import os
 import wandb
 
 # Login dan inisialisasi WandB (isi API key kamu di sini)
-wandb.login(key="ISI_API_KEY_KAMU")  # Ganti dengan API key kamu
+wandb.login(key="595e6b13fa8ef2facafb03b66d254cef91bc7e55")  # Ganti dengan API key kamu
 wandb.init(project="sentimen-jmo", name="bert-training-run")
 
 # Set style visual
