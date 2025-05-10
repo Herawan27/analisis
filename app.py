@@ -1,35 +1,55 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from wordcloud import WordCloud
 import seaborn as sns
+from wordcloud import WordCloud
+import re
+import string
 from sklearn.utils import resample
-from sklearn.metrics import classification_report, accuracy_score
-from transformers import AdamW
-from transformers import BertTokenizer, BertForSequenceClassification, AdamW
-import torch
+from nltk.tokenize import TweetTokenizer
+from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
+from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
+from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
 from sklearn.model_selection import train_test_split
-from torch.utils.data import DataLoader
-from tqdm import tqdm
+from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, classification_report, confusion_matrix
+import torch
+import nltk
 
-# Set style visual
-sns.set_style("whitegrid")
+nltk.download('punkt')
 
-st.title("📊 Aplikasi Analisis Sentimen Menggunakan BERT")
+# --- Inisialisasi ---
+stopword_factory = StopWordRemoverFactory()
+stopwords_list = stopword_factory.get_stop_words()
+stemmer = StemmerFactory().create_stemmer()
+tokenizer = TweetTokenizer()
+bert_tokenizer = BertTokenizer.from_pretrained('indobenchmark/indobert-base-p1')
 
-file = st.file_uploader("Unggah file CSV", type=["csv"])
+st.set_page_config(page_title="Analisis Sentimen JMO", layout="wide")
 
-if file:
-    df = pd.read_csv(file)
-    st.subheader("🔍 Data yang Diunggah:")
-    st.write(df)
+st.title("📱 Analisis Sentimen Ulasan Aplikasi JMO")
 
-    # === Processing dan Labeling ===
-    st.header("⚙️ Processing dan Labeling Berdasarkan Rating (Star)")
+# --- Sidebar ---
+menu = st.sidebar.radio("Pilih Menu", ["Upload Data", "Processing & Labeling", "Visualisasi Data", "Evaluasi Model"])
 
-    if st.button("🔧 Proses dan Labeling"):
-        df["content"] = df["content"].astype(str).str.lower().str.replace(r'[^\w\s]', '', regex=True)
+# --- Global Dataset State ---
+if "data" not in st.session_state:
+    st.session_state.data = None
 
+# --- Upload Data ---
+if menu == "Upload Data":
+    uploaded_file = st.file_uploader("Upload file CSV hasil scraping", type=["csv"])
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        st.session_state.data = df
+        st.success("✅ Data berhasil diupload!")
+        st.write(df.head())
+
+# --- Processing & Labeling ---
+elif menu == "Processing & Labeling":
+    if st.session_state.data is not None:
+        df = st.session_state.data.copy()
+
+        st.subheader("🔧 Label Sentimen")
         def label_sentiment(score):
             if score >= 4:
                 return "positif"
@@ -39,150 +59,162 @@ if file:
                 return "negatif"
 
         df['label'] = df['star'].apply(label_sentiment)
-        st.success("✅ Labeling selesai berdasarkan kolom 'star'")
-        st.write(df)
 
-        csv = df.to_csv(index=False).encode("utf-8")
-        st.download_button("💾 Download File Berlabel", csv, "labeled_data.csv", "text/csv")
+        st.subheader("🧹 Preprocessing")
 
-    # === Visualisasi ===
-    st.header("📈 Visualisasi Sentimen")
-    if "label" in df.columns and "content" in df.columns:
-        st.subheader("📊 Distribusi Sentimen:")
-        sentiment_counts = df["label"].value_counts().reindex(["positif", "netral", "negatif"]).fillna(0).astype(int)
-        total = sentiment_counts.sum()
-        sentiment_percent = (sentiment_counts / total * 100).round(2)
+        normalization_dict = {
+            'gk': 'nggak', 'ga': 'nggak', 'tdk': 'tidak', 'bgt': 'banget',
+            'sm': 'sama', 'aja': 'saja', 'udh': 'sudah', 'dr': 'dari',
+        }
 
-        distribusi_df = pd.DataFrame({
-            "Jumlah": sentiment_counts,
-            "Persentase (%)": sentiment_percent
-        })
-        distribusi_df.loc["Total"] = [total, 100.0]
-        st.dataframe(distribusi_df)
+        def clean_text(text):
+            text = text.lower()
+            text = re.sub(r"http\S+|www\S+|https\S+", '', text)
+            text = re.sub(r'\@\w+|\#','', text)
+            text = re.sub(r'[^A-Za-z\s]', '', text)
+            text = re.sub(r'\d+', '', text)
+            text = text.translate(str.maketrans('', '', string.punctuation))
+            return text
 
+        def normalize_text(text):
+            return ' '.join([normalization_dict.get(word, word) for word in text.split()])
+
+        def full_preprocess(text):
+            text = clean_text(text)
+            text = normalize_text(text)
+            tokens = tokenizer.tokenize(text)
+            tokens = [word for word in tokens if word not in stopwords_list]
+            return stemmer.stem(' '.join(tokens))
+
+        df['content_stemmed'] = df['content'].astype(str).apply(full_preprocess)
+
+        df['label_num'] = df['label'].map({'negatif': 0, 'netral': 1, 'positif': 2})
+
+        st.session_state.data = df
+        st.success("✅ Preprocessing & Labeling selesai")
+        st.dataframe(df[['content', 'content_stemmed', 'label']].head())
+
+        st.download_button("📥 Download Data Berlabel", df.to_csv(index=False), file_name="data_labeled.csv")
+    else:
+        st.warning("❗Silakan upload data terlebih dahulu di menu 'Upload Data'")
+
+# --- Visualisasi Data ---
+elif menu == "Visualisasi Data":
+    if st.session_state.data is not None:
+        df = st.session_state.data.copy()
+        st.subheader("📊 Distribusi Sentimen")
         fig, ax = plt.subplots()
-        ax.pie(sentiment_percent, labels=sentiment_percent.index, autopct='%1.1f%%',
-               colors=["green", "orange", "red"], startangle=140)
-        ax.axis('equal')
-        st.subheader("📎 Diagram Lingkaran Sentimen")
+        sns.countplot(data=df, x='label', order=['positif', 'netral', 'negatif'], ax=ax)
         st.pyplot(fig)
 
-        st.subheader("☁️ WordCloud per Sentimen")
-        col1, col2, col3 = st.columns(3)
-        for label, col, color in zip(["positif", "netral", "negatif"], [col1, col2, col3], ["Greens", "Oranges", "Reds"]):
-            with col:
-                text_data = " ".join(df[df["label"] == label]["content"].astype(str))
-                if text_data.strip():
-                    wordcloud = WordCloud(width=300, height=300, background_color="white", colormap=color).generate(text_data)
-                    fig, ax = plt.subplots()
-                    ax.imshow(wordcloud, interpolation='bilinear')
-                    ax.axis("off")
-                    st.markdown(f"**{label.capitalize()}**")
-                    st.pyplot(fig)
-                else:
-                    st.info(f"Tidak ada data untuk label: {label}")
+        st.subheader("☁️ Wordcloud")
+        selected_label = st.selectbox("Pilih label sentimen", ['positif', 'netral', 'negatif'])
 
-        st.subheader('🔍 Contoh Ulasan dengan "would" atau "could"')
-        keywords = df[df['content'].str.contains(r'\b(would|could)\b', case=False, na=False)]
-        if not keywords.empty:
-            for label in ["positif", "netral", "negatif"]:
-                filtered = keywords[keywords["label"] == label]
-                if not filtered.empty:
-                    st.markdown(f"**{label.capitalize()}** ({len(filtered)} ditemukan):")
-                    st.write(filtered[["content"]].head(3))
-        else:
-            st.info('Tidak ditemukan ulasan dengan kata "would" atau "could".')
+        text = ' '.join(df[df['label'] == selected_label]['content_stemmed'])
+        wc = WordCloud(width=800, height=400, background_color='white').generate(text)
 
-    # === Evaluasi Model ===
-    st.header("🧠 Evaluasi Model BERT")
+        fig_wc, ax_wc = plt.subplots()
+        ax_wc.imshow(wc, interpolation='bilinear')
+        ax_wc.axis("off")
+        st.pyplot(fig_wc)
+    else:
+        st.warning("❗Silakan upload dan proses data terlebih dahulu.")
 
-    if "label" in df.columns and "content" in df.columns:
-        label_map = {'positif': 1, 'netral': 2, 'negatif': 0}
-        df['label'] = df['label'].map(label_map)
+# --- Evaluasi Model ---
+elif menu == "Evaluasi Model":
+    if st.session_state.data is not None:
+        df = st.session_state.data.copy()
+        st.subheader("📈 Evaluasi Model BERT")
 
-        st.write("Distribusi Data Sebelum Oversampling:")
-        st.bar_chart(df["label"].value_counts())
+        # Oversampling
+        df_major = df[df.label == 'positif']
+        df_neg = df[df.label == 'negatif']
+        df_net = df[df.label == 'netral']
 
-        label_counts = df['label'].value_counts()
-        max_count = label_counts.max()
+        df_neg_up = resample(df_neg, replace=True, n_samples=len(df_major), random_state=42)
+        df_net_up = resample(df_net, replace=True, n_samples=len(df_major), random_state=42)
 
-        df_oversampled = pd.DataFrame()
-        for label in label_counts.index:
-            df_label = df[df['label'] == label]
-            df_label_upsampled = resample(df_label, replace=True, n_samples=max_count, random_state=42)
-            df_oversampled = pd.concat([df_oversampled, df_label_upsampled])
+        df_bal = pd.concat([df_major, df_neg_up, df_net_up])
+        df_bal['label_num'] = df_bal['label'].map({'negatif': 0, 'netral': 1, 'positif': 2})
 
-        df_balanced = df_oversampled.sample(frac=1, random_state=42).reset_index(drop=True)
+        X_train, X_val, y_train, y_val = train_test_split(
+            df_bal['content_stemmed'], df_bal['label_num'], test_size=0.2, stratify=df_bal['label_num'], random_state=42
+        )
 
-        st.write("Distribusi Data Setelah Oversampling:")
-        st.bar_chart(df_balanced["label"].value_counts())
-
-        X_train, X_test, y_train, y_test = train_test_split(
-            df_balanced["content"], df_balanced["label"], test_size=0.2, random_state=42)
-
-        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        train_encodings = tokenizer(list(X_train.astype(str)), truncation=True, padding=True, max_length=128)
-        test_encodings = tokenizer(list(X_test.astype(str)), truncation=True, padding=True, max_length=128)
+        train_enc = bert_tokenizer(list(X_train), truncation=True, padding=True, max_length=128)
+        val_enc = bert_tokenizer(list(X_val), truncation=True, padding=True, max_length=128)
 
         class SentimentDataset(torch.utils.data.Dataset):
             def __init__(self, encodings, labels):
                 self.encodings = encodings
                 self.labels = labels
 
-            def __len__(self):
-                return len(self.labels)
-
             def __getitem__(self, idx):
                 item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
                 item['labels'] = torch.tensor(self.labels[idx])
                 return item
 
-        train_dataset = SentimentDataset(train_encodings, list(y_train))
-        test_dataset = SentimentDataset(test_encodings, list(y_test))
+            def __len__(self):
+                return len(self.labels)
 
-        model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)
+        train_dataset = SentimentDataset(train_enc, list(y_train))
+        val_dataset = SentimentDataset(val_enc, list(y_val))
 
-        # Deteksi device (GPU jika ada)
-        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        model.to(device)
+        model = BertForSequenceClassification.from_pretrained("indobenchmark/indobert-base-p1", num_labels=3)
 
-        # Optimizer
-        optimizer = AdamW(model.parameters(), lr=5e-5)
+        def compute_metrics(eval_pred):
+            logits, labels = eval_pred
+            preds = logits.argmax(axis=-1)
+            return {
+                "accuracy": accuracy_score(labels, preds),
+                "precision": precision_score(labels, preds, average='macro', zero_division=1),
+                "recall": recall_score(labels, preds, average='macro', zero_division=1),
+                "f1": f1_score(labels, preds, average='macro', zero_division=1)
+            }
 
-        st.info("⏳ Melatih model BERT secara manual...")
+        args = TrainingArguments(
+            output_dir="./results",
+            num_train_epochs=3,
+            per_device_train_batch_size=8,
+            per_device_eval_batch_size=8,
+            logging_dir="./logs",
+            do_eval=True,
+            save_total_limit=1
+        )
 
-        # Training loop manual
-        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-        model.train()
-        for epoch in range(3):  # num_train_epochs
-            progress = st.progress(0, text=f"Epoch {epoch + 1}/3")
-            for i, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1}")):
-                batch = {k: v.to(device) for k, v in batch.items()}
-                outputs = model(**batch)
-                loss = outputs.loss
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
-                progress.progress((i + 1) / len(train_loader))
+        trainer = Trainer(
+            model=model,
+            args=args,
+            train_dataset=train_dataset,
+            eval_dataset=val_dataset,
+            compute_metrics=compute_metrics
+        )
 
-        st.success("✅ Model telah dilatih!")
+        with st.spinner("Training model..."):
+            trainer.train()
+            preds = trainer.predict(val_dataset)
 
-        # Evaluasi
-        model.eval()
-        test_loader = DataLoader(test_dataset, batch_size=64)
-        all_preds = []
-        all_labels = []
+        y_pred = preds.predictions.argmax(axis=-1)
+        st.success("✅ Training selesai")
 
-        with torch.no_grad():
-            for batch in test_loader:
-                batch = {k: v.to(device) for k, v in batch.items()}
-                outputs = model(**batch)
-                logits = outputs.logits
-                predictions = torch.argmax(logits, dim=-1)
-                all_preds.extend(predictions.cpu().numpy())
-                all_labels.extend(batch['labels'].cpu().numpy())
+        st.subheader("📊 Metrics")
+        acc = accuracy_score(y_val, y_pred)
+        prec = precision_score(y_val, y_pred, average='macro', zero_division=1)
+        rec = recall_score(y_val, y_pred, average='macro', zero_division=1)
+        f1 = f1_score(y_val, y_pred, average='macro', zero_division=1)
 
-        # Tampilkan hasil
-        st.subheader("📊 Hasil Evaluasi Manual:")
-        st.text(classification_report(all_labels, all_preds))
-        st.metric("🎯 Akurasi", f"{accuracy_score(all_labels, all_preds):.2f}")
+        st.write(f"**Accuracy**: {acc:.2%}")
+        st.write(f"**Precision**: {prec:.2%}")
+        st.write(f"**Recall**: {rec:.2%}")
+        st.write(f"**F1 Score**: {f1:.2%}")
+
+        st.subheader("📉 Confusion Matrix")
+        cm = confusion_matrix(y_val, y_pred)
+        fig_cm, ax_cm = plt.subplots()
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=['Negatif', 'Netral', 'Positif'],
+                    yticklabels=['Negatif', 'Netral', 'Positif'], ax=ax_cm)
+        st.pyplot(fig_cm)
+
+    else:
+        st.warning("❗Silakan upload dan proses data terlebih dahulu.")
