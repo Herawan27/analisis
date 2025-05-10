@@ -186,14 +186,21 @@ elif menu == "Evaluasi Model":
             # Load pre-trained model
             model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)  # 3 classes: positive, neutral, negative
 
+            # Set training arguments
             training_args = TrainingArguments(
                 output_dir='./results',
-                num_train_epochs=1,
+                num_train_epochs=3,  # Increase the number of epochs for better training
                 per_device_train_batch_size=16,
                 per_device_eval_batch_size=64,
-                warmup_steps=10,
-                logging_steps=10,
-                disable_tqdm=True
+                warmup_steps=500,  # Adjust warmup steps based on the training data
+                weight_decay=0.01,  # Apply weight decay for regularization
+                logging_dir='./logs',  # Log directory
+                logging_steps=200,
+                evaluation_strategy="epoch",  # Evaluate at the end of each epoch
+                disable_tqdm=False,
+                no_cuda=False,  # Set this to True if you want to force CPU training
+                load_best_model_at_end=True,  # Save the best model based on evaluation metrics
+                metric_for_best_model="accuracy",  # Use accuracy as the evaluation metric
             )
 
             trainer = Trainer(
@@ -201,6 +208,9 @@ elif menu == "Evaluasi Model":
                 args=training_args,
                 train_dataset=train_dataset,
                 eval_dataset=test_dataset,
+                compute_metrics=lambda p: {
+                    'accuracy': accuracy_score(p.label_ids, p.predictions.argmax(axis=1))
+                },
             )
 
             with st.spinner("Melatih model BERT..."):
