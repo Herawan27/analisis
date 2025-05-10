@@ -8,14 +8,15 @@ from sklearn.metrics import classification_report, accuracy_score
 from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
 import torch
 from sklearn.model_selection import train_test_split
+import os
 import wandb
 
-# Inisialisasi wandb
+# Login dan inisialisasi WandB (isi API key kamu di sini)
+wandb.login(key="ISI_API_KEY_KAMU")  # Ganti dengan API key kamu
 wandb.init(project="sentimen-jmo", name="bert-training-run")
 
 # Set style visual
 sns.set_style("whitegrid")
-
 st.title("📊 Aplikasi Analisis Sentimen Menggunakan BERT")
 
 file = st.file_uploader("Unggah file CSV", type=["csv"])
@@ -27,7 +28,6 @@ if file:
 
     # === Processing dan Labeling ===
     st.header("⚙️ Processing dan Labeling Berdasarkan Rating (Star)")
-
     if st.button("🔧 Proses dan Labeling"):
         df["content"] = df["content"].astype(str).str.lower().str.replace(r'[^\w\s]', '', regex=True)
 
@@ -96,7 +96,6 @@ if file:
 
     # === Evaluasi Model ===
     st.header("🧠 Evaluasi Model BERT")
-
     if "label" in df.columns and "content" in df.columns:
         label_map = {'positif': 1, 'netral': 2, 'negatif': 0}
         df['label'] = df['label'].map(label_map)
@@ -145,7 +144,7 @@ if file:
 
         training_args = TrainingArguments(
             output_dir='./results',
-            run_name='bert_sentimen_jmo',  # Berbeda dari output_dir
+            run_name='bert_sentimen_jmo',
             num_train_epochs=3,
             per_device_train_batch_size=16,
             per_device_eval_batch_size=64,
@@ -154,8 +153,8 @@ if file:
             logging_dir='./logs',
             logging_steps=200,
             disable_tqdm=False,
-            no_cuda=False,  # True jika pakai CPU
-            report_to="wandb"  # Kirim log ke wandb
+            no_cuda=False,
+            report_to="wandb"
         )
 
         trainer = Trainer(
@@ -169,7 +168,6 @@ if file:
             trainer.train()
 
         wandb.finish()  # Akhiri sesi wandb
-
         st.success("✅ Model telah dilatih!")
 
         preds = trainer.predict(test_dataset)
