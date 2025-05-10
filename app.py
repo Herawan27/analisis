@@ -155,6 +155,7 @@ if file:
         model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)  # 3 classes: positive, neutral, negative
 
         # Set TrainingArguments
+
         training_args = TrainingArguments(
     output_dir='./results',
     num_train_epochs=3,
@@ -163,8 +164,11 @@ if file:
     warmup_steps=500,
     weight_decay=0.01,
     logging_dir='./logs',
-    evaluation_strategy="steps",  # Bisa ganti jadi "steps" atau "epoch"
+    logging_steps=200,
+    disable_tqdm=False,
+    no_cuda=False,  # Ganti True kalau kamu pakai CPU saja
 )
+
 
 
         trainer = Trainer(
