@@ -5,18 +5,16 @@ from wordcloud import WordCloud
 import seaborn as sns
 from sklearn.utils import resample
 from sklearn.metrics import classification_report, accuracy_score
-from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
+from transformers import BertTokenizer, BertForSequenceClassification
 import torch
 from sklearn.model_selection import train_test_split
-import os
-import wandb
-
-# Login dan inisialisasi WandB (isi API key kamu di sini)
-wandb.login(key="595e6b13fa8ef2facafb03b66d254cef91bc7e55")  # Ganti dengan API key kamu
-wandb.init(project="sentimen-jmo", name="bert-training-run")
+from torch.utils.data import DataLoader
+from transformers import AdamW
+from tqdm import tqdm
 
 # Set style visual
 sns.set_style("whitegrid")
+
 st.title("📊 Aplikasi Analisis Sentimen Menggunakan BERT")
 
 file = st.file_uploader("Unggah file CSV", type=["csv"])
@@ -28,6 +26,7 @@ if file:
 
     # === Processing dan Labeling ===
     st.header("⚙️ Processing dan Labeling Berdasarkan Rating (Star)")
+
     if st.button("🔧 Proses dan Labeling"):
         df["content"] = df["content"].astype(str).str.lower().str.replace(r'[^\w\s]', '', regex=True)
 
@@ -96,6 +95,7 @@ if file:
 
     # === Evaluasi Model ===
     st.header("🧠 Evaluasi Model BERT")
+
     if "label" in df.columns and "content" in df.columns:
         label_map = {'positif': 1, 'netral': 2, 'negatif': 0}
         df['label'] = df['label'].map(label_map)
@@ -142,38 +142,47 @@ if file:
 
         model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)
 
-        training_args = TrainingArguments(
-    output_dir='./results',
-    run_name='bert_sentimen_jmo',
-    num_train_epochs=3,
-    per_device_train_batch_size=16,
-    per_device_eval_batch_size=64,
-    warmup_steps=500,
-    weight_decay=0.01,
-    logging_dir='./logs',
-    logging_steps=200,
-    disable_tqdm=False,
-    no_cuda=True,  # <-- ini yang penting!
-    report_to="wandb"
-)
+        # Deteksi device (GPU jika ada)
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        model.to(device)
 
+        # Optimizer
+        optimizer = AdamW(model.parameters(), lr=5e-5)
 
-        trainer = Trainer(
-            model=model,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=test_dataset,
-        )
+        st.info("⏳ Melatih model BERT secara manual...")
 
-        with st.spinner("Melatih model BERT..."):
-            trainer.train()
+        # Training loop manual
+        train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+        model.train()
+        for epoch in range(3):  # num_train_epochs
+            progress = st.progress(0, text=f"Epoch {epoch + 1}/3")
+            for i, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch+1}")):
+                batch = {k: v.to(device) for k, v in batch.items()}
+                outputs = model(**batch)
+                loss = outputs.loss
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+                progress.progress((i + 1) / len(train_loader))
 
-        wandb.finish()  # Akhiri sesi wandb
         st.success("✅ Model telah dilatih!")
 
-        preds = trainer.predict(test_dataset)
-        pred_labels = preds.predictions.argmax(axis=1)
+        # Evaluasi
+        model.eval()
+        test_loader = DataLoader(test_dataset, batch_size=64)
+        all_preds = []
+        all_labels = []
 
-        st.subheader("📊 Hasil Evaluasi:")
-        st.text(classification_report(y_test, pred_labels))
-        st.metric("🎯 Akurasi", f"{accuracy_score(y_test, pred_labels):.2f}")
+        with torch.no_grad():
+            for batch in test_loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                outputs = model(**batch)
+                logits = outputs.logits
+                predictions = torch.argmax(logits, dim=-1)
+                all_preds.extend(predictions.cpu().numpy())
+                all_labels.extend(batch['labels'].cpu().numpy())
+
+        # Tampilkan hasil
+        st.subheader("📊 Hasil Evaluasi Manual:")
+        st.text(classification_report(all_labels, all_preds))
+        st.metric("🎯 Akurasi", f"{accuracy_score(all_labels, all_preds):.2f}")
