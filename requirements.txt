@@ -6,6 +6,6 @@ seaborn
 scikit-learn
 torch
 wandb
-AdamW
+tqdm
 numpy
 transformers
