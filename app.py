@@ -32,7 +32,7 @@ if menu == "Upload Data":
         st.subheader("🔍 Data yang Diunggah:")
         st.write(df)
 
-# MENU 2: Processing dan Labeling
+# === MENU 2: Processing dan Labeling ===
 elif menu == "Processing dan Labeling":
     st.header("⚙️ Processing dan Labeling Berdasarkan Rating (Star)")
     file = st.file_uploader("Upload file CSV untuk diproses", type=["csv"], key="preprocess")
@@ -63,9 +63,7 @@ elif menu == "Processing dan Labeling":
             csv = df.to_csv(index=False).encode("utf-8")
             st.download_button("💾 Download File Berlabel", csv, "labeled_data.csv", "text/csv")
 
-# ================================
-# MENU 3: Visualisasi Data
-# ================================
+# === MENU 3: Visualisasi Data ===
 elif menu == "Visualisasi Data":
     st.header("📈 Visualisasi Sentimen")
     file = st.file_uploader("Upload file yang sudah diberi label", type=["csv"], key="visual")
@@ -123,6 +121,7 @@ elif menu == "Visualisasi Data":
                 st.info('Tidak ditemukan ulasan dengan kata "would" atau "could".')
         else:
             st.warning("Kolom 'label' atau 'content' tidak ditemukan pada file CSV.")
+
 # === MENU 4: Evaluasi Model ===
 elif menu == "Evaluasi Model":
     st.header("🧠 Evaluasi Model BERT")
