@@ -156,20 +156,16 @@ if file:
 
         # Set TrainingArguments
         training_args = TrainingArguments(
-            output_dir='./results',
-            num_train_epochs=3,
-            per_device_train_batch_size=16,
-            per_device_eval_batch_size=64,
-            warmup_steps=500,
-            weight_decay=0.01,
-            logging_dir='./logs',
-            logging_steps=200,
-            evaluation_strategy="epoch",
-            disable_tqdm=False,
-            no_cuda=False,  # Set to True if using CPU
-            load_best_model_at_end=True,
-            metric_for_best_model="accuracy",
-        )
+    output_dir='./results',
+    num_train_epochs=3,
+    per_device_train_batch_size=16,
+    per_device_eval_batch_size=64,
+    warmup_steps=500,
+    weight_decay=0.01,
+    logging_dir='./logs',
+    evaluation_strategy="steps",  # Bisa ganti jadi "steps" atau "epoch"
+)
+
 
         trainer = Trainer(
             model=model,
