@@ -8,3 +8,4 @@ nltk
 Sastrawi
 transformers
 torch
+accelerate
