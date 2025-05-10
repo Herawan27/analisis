@@ -9,7 +9,7 @@ from transformers import BertTokenizer, BertForSequenceClassification
 import torch
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
-from transformers import AdamW
+import AdamW
 from tqdm import tqdm
 
 # Set style visual
