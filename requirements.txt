@@ -1,11 +1,10 @@
 streamlit
 pandas
 matplotlib
-wordcloud
 seaborn
+wordcloud
 scikit-learn
-torch
-wandb
-tqdm
-numpy
+nltk
+Sastrawi
 transformers
+torch
