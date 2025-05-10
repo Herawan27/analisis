@@ -58,8 +58,7 @@ biner = df['sentiment'].apply(score_sentiment)
 X_train, X_test, Y_train, Y_test = train_test_split(df['text_clean'], biner, test_size=0.2, stratify=biner, random_state=42)
 tokenizer = BertTokenizer.from_pretrained('indobenchmark/indobert-base-p1')
 # Update: Change num_labels to 3
- model = BertForSequenceClassification.from_pretrained('indobenchmark/indobert-base-p1', num_labels=3)
-
+model = BertForSequenceClassification.from_pretrained('indobenchmark/indobert-base-p1', num_labels=3)
 train_encodings = tokenizer(X_train.tolist(), truncation=True, padding=True, max_length=128)
 test_encodings = tokenizer(X_test.tolist(), truncation=True, padding=True, max_length=128)
 class SentimentDataset(torch.utils.data.Dataset): def  init (self, encodings, labels):
