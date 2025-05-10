@@ -4,5 +4,6 @@ matplotlib
 wordcloud
 seaborn
 scikit-learn
+torch
 numpy
 transformers
