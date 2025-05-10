@@ -8,17 +8,19 @@ from sklearn.metrics import classification_report, accuracy_score
 from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
 import torch
 from sklearn.model_selection import train_test_split
+import wandb
 
-# Set style
+# Inisialisasi wandb
+wandb.init(project="sentimen-jmo", name="bert-training-run")
+
+# Set style visual
 sns.set_style("whitegrid")
 
 st.title("📊 Aplikasi Analisis Sentimen Menggunakan BERT")
 
-# Upload file untuk seluruh aplikasi
 file = st.file_uploader("Unggah file CSV", type=["csv"])
 
 if file:
-    # Membaca data dari file CSV
     df = pd.read_csv(file)
     st.subheader("🔍 Data yang Diunggah:")
     st.write(df)
@@ -27,10 +29,8 @@ if file:
     st.header("⚙️ Processing dan Labeling Berdasarkan Rating (Star)")
 
     if st.button("🔧 Proses dan Labeling"):
-        # Preprocessing
         df["content"] = df["content"].astype(str).str.lower().str.replace(r'[^\w\s]', '', regex=True)
 
-        # Labeling berdasarkan rating
         def label_sentiment(score):
             if score >= 4:
                 return "positif"
@@ -38,21 +38,18 @@ if file:
                 return "netral"
             else:
                 return "negatif"
-        
+
         df['label'] = df['star'].apply(label_sentiment)
         st.success("✅ Labeling selesai berdasarkan kolom 'star'")
         st.write(df)
 
-        # Simpan hasil
         csv = df.to_csv(index=False).encode("utf-8")
         st.download_button("💾 Download File Berlabel", csv, "labeled_data.csv", "text/csv")
 
-    # === Visualisasi Data ===
+    # === Visualisasi ===
     st.header("📈 Visualisasi Sentimen")
-
     if "label" in df.columns and "content" in df.columns:
         st.subheader("📊 Distribusi Sentimen:")
-
         sentiment_counts = df["label"].value_counts().reindex(["positif", "netral", "negatif"]).fillna(0).astype(int)
         total = sentiment_counts.sum()
         sentiment_percent = (sentiment_counts / total * 100).round(2)
@@ -87,7 +84,7 @@ if file:
                     st.info(f"Tidak ada data untuk label: {label}")
 
         st.subheader('🔍 Contoh Ulasan dengan "would" atau "could"')
-        keywords = df[df['content'].str.contains(r'\\b(would|could)\\b', case=False, na=False)]
+        keywords = df[df['content'].str.contains(r'\b(would|could)\b', case=False, na=False)]
         if not keywords.empty:
             for label in ["positif", "netral", "negatif"]:
                 filtered = keywords[keywords["label"] == label]
@@ -101,17 +98,12 @@ if file:
     st.header("🧠 Evaluasi Model BERT")
 
     if "label" in df.columns and "content" in df.columns:
-        # Label encoding: map 'positif' -> 1, 'negatif' -> 0, and 'netral' -> 2
         label_map = {'positif': 1, 'netral': 2, 'negatif': 0}
         df['label'] = df['label'].map(label_map)
-
-        # Ensure that 'label' column contains integers
-        assert df['label'].dtype == 'int64', "Labels should be integer values"
 
         st.write("Distribusi Data Sebelum Oversampling:")
         st.bar_chart(df["label"].value_counts())
 
-        # Oversampling agar data seimbang
         label_counts = df['label'].value_counts()
         max_count = label_counts.max()
 
@@ -126,11 +118,9 @@ if file:
         st.write("Distribusi Data Setelah Oversampling:")
         st.bar_chart(df_balanced["label"].value_counts())
 
-        # Split data
         X_train, X_test, y_train, y_test = train_test_split(
             df_balanced["content"], df_balanced["label"], test_size=0.2, random_state=42)
 
-        # Tokenizer dan encoding
         tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         train_encodings = tokenizer(list(X_train.astype(str)), truncation=True, padding=True, max_length=128)
         test_encodings = tokenizer(list(X_test.astype(str)), truncation=True, padding=True, max_length=128)
@@ -145,31 +135,28 @@ if file:
 
             def __getitem__(self, idx):
                 item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
-                item['labels'] = torch.tensor(self.labels[idx])  # Ensure labels are integers
+                item['labels'] = torch.tensor(self.labels[idx])
                 return item
 
         train_dataset = SentimentDataset(train_encodings, list(y_train))
         test_dataset = SentimentDataset(test_encodings, list(y_test))
 
-        # Load pre-trained model
-        model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)  # 3 classes: positive, neutral, negative
-
-        # Set TrainingArguments
+        model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)
 
         training_args = TrainingArguments(
-    output_dir='./results',
-    num_train_epochs=3,
-    per_device_train_batch_size=16,
-    per_device_eval_batch_size=64,
-    warmup_steps=500,
-    weight_decay=0.01,
-    logging_dir='./logs',
-    logging_steps=200,
-    disable_tqdm=False,
-    no_cuda=False,  # Ganti True kalau kamu pakai CPU saja
-)
-
-
+            output_dir='./results',
+            run_name='bert_sentimen_jmo',  # Berbeda dari output_dir
+            num_train_epochs=3,
+            per_device_train_batch_size=16,
+            per_device_eval_batch_size=64,
+            warmup_steps=500,
+            weight_decay=0.01,
+            logging_dir='./logs',
+            logging_steps=200,
+            disable_tqdm=False,
+            no_cuda=False,  # True jika pakai CPU
+            report_to="wandb"  # Kirim log ke wandb
+        )
 
         trainer = Trainer(
             model=model,
@@ -181,9 +168,10 @@ if file:
         with st.spinner("Melatih model BERT..."):
             trainer.train()
 
+        wandb.finish()  # Akhiri sesi wandb
+
         st.success("✅ Model telah dilatih!")
 
-        # Evaluasi
         preds = trainer.predict(test_dataset)
         pred_labels = preds.predictions.argmax(axis=1)
 
