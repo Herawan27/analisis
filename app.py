@@ -5,6 +5,7 @@ from wordcloud import WordCloud
 import seaborn as sns
 from sklearn.utils import resample
 from sklearn.metrics import classification_report, accuracy_score
+from transformers.optimization import AdamW
 from transformers import BertTokenizer, BertForSequenceClassification, AdamW
 import torch
 from sklearn.model_selection import train_test_split
